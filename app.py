@@ -263,10 +263,6 @@ with st.expander("参加用URLとQR"):
 # Auto refresh & last refresh tracking
 st_autorefresh(interval=refresh_ms, key="refresh")
 last_seen = pd.to_datetime(st.session_state.last_refresh)
- & last refresh tracking
-st_autorefresh(interval=refresh_ms, key="refresh")
-last_seen = pd.to_datetime(st.session_state.last_refresh)
-
 # Admin PIN helper
 def is_admin_ok():
     if not room.get("admin_pin"): return True
