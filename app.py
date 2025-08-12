@@ -121,7 +121,7 @@ def ensure_room_by_code(code):
     with get_db() as conn:
         return conn.cursor().execute("SELECT * FROM rooms WHERE code=?", (code,)).fetchone()
 
-def create_room(title, admin_pin=None, code=None, creator_pass=None):
+def create_room(title, admin_pin=None, code=None, creator_pass=None, creator_pass=None):
     if (creator_pass or "") != CREATE_PASS:
         raise ValueError("作成パスワードが正しくありません。")
     if code and not is_valid_code(code): raise ValueError("ルームIDは6桁の数字です。")
@@ -267,9 +267,10 @@ with st.sidebar.expander("ルーム作成（6桁）", expanded=False):
     desired = st.text_input("カスタムID（6桁数字）", placeholder="例: 128947")
     admin_pin = st.text_input("司会者PIN（任意）", type="password")
     create_pass = st.text_input("作成パスワード", type="password", placeholder="0731")
+    create_pass = st.text_input("作成パスワード", type="password", placeholder="0731")
     if st.button("作成", use_container_width=True):
         try:
-            code = create_room(new_title, admin_pin=admin_pin, code=desired or None, creator_pass=create_pass)
+            code = create_room(new_title, admin_pin=admin_pin, code=desired or None, creator_pass=create_pass, creator_pass=create_pass)
             st.session_state["room_code"] = code
             st.success(f"作成しました: {code}")
             st.query_params.update(room=code)
@@ -308,23 +309,28 @@ with st.container():
 
 # QR absolute link builder
 with st.expander("参加用URLとQR"):
-    # 固定のベースURLを使用（?room=CODE を付与）
-    join_link = f"{DEFAULT_BASE_URL}/?room={room_code}"
-    st.text_input("参加URL（配布用）", value=join_link, disabled=True)
-    st.caption("このURLをスマホで開けば、そのままルームに参加できます。")
+    link_p = f"{DEFAULT_BASE_URL}/?room={room_code}&view=p&lock=1"
+    link_o = f"{DEFAULT_BASE_URL}/?room={room_code}&view=o"
+    link_j = f"{DEFAULT_BASE_URL}/?room={room_code}&view=j&lock=1"
 
-    # QRコード
+    st.markdown("**参加者用URL（ロール固定）**")
+    st.text_input("Participant URL", value=link_p, disabled=True)
+    from io import BytesIO
     buf = BytesIO()
-    qrcode.make(join_link).save(buf, format="PNG"); buf.seek(0)
-    st.image(buf, caption="スマホで読み取り（URLを開くだけで参加）", width=180)
+    qrcode.make(link_p).save(buf, format="PNG"); buf.seek(0)
+    st.image(buf, caption="参加者用QR（開くと自動で参加者モード）", width=180)
 
-    # 参加案内（スクリーンに表示する想定）
-    st.markdown("""
+    st.markdown("**司会者用URL（PIN必須）**")
+    st.text_input("Organizer URL", value=link_o, disabled=True)
+
+    st.markdown("**プロジェクター用URL（ロール固定）**")
+    st.text_input("Projector URL", value=link_j, disabled=True)
+
+    st.markdown(f"""
 **参加のしかた**
-1. スマホで **上記URL** を開く（またはQRを読み取り）  
-2. 画面上部のロールを **「参加者」** にする  
-3. そのまま投稿・👍投票ができます  
-   ※ もしトップ画面に来た場合は、サイドバーの **「参加ID」** に **{room_code}** を入力してください。
+1. スマホで **参加者用URL** を開く（または上のQRを読み取り）  
+2. そのまま投稿・👍投票ができます（同じ投稿へは同端末で1回まで）
+3. もしトップに来た場合は、左の **参加ID** に **{room_code}** を入力してください
 """)
 
 # Auto refresh & last refresh tracking
@@ -456,30 +462,30 @@ elif mode == "司会者":
             st.warning(f"クラスタリングは現在利用できません: {e}")
 
     
-with tabs[2]:
-        c1, c2, c3 = st.columns(3)
-        with c1:
-            closed = bool(room.get("is_closed")==1)
-            new_closed = st.toggle("投稿をクローズ", value=closed)
-            if new_closed != closed:
-                set_room_closed(room_code, new_closed); st.rerun()
-        with c2:
-            if st.button("フォーカス解除"):
-                set_focus(room_code, None); st.success("フォーカスを解除しました")
-        with c3:
-            st.caption("共有は ?room=CODE のURLを配布してください")
+    with tabs[2]:
+            c1, c2, c3 = st.columns(3)
+            with c1:
+                closed = bool(room.get("is_closed")==1)
+                new_closed = st.toggle("投稿をクローズ", value=closed)
+                if new_closed != closed:
+                    set_room_closed(room_code, new_closed); st.rerun()
+            with c2:
+                if st.button("フォーカス解除"):
+                    set_focus(room_code, None); st.success("フォーカスを解除しました")
+            with c3:
+                st.caption("共有は ?room=CODE のURLを配布してください")
 
-        st.markdown("#### 表示設定（参加者に同期）")
-        current_scale = (get_room(room_code) or {}).get("font_scale", 1.15)
-        new_scale = st.slider("参加者の文字サイズ（全端末に反映）", 0.9, 1.7, float(current_scale), 0.05)
-        if st.button("適用（2秒以内に全端末へ反映）"):
-            set_room_font(room_code, new_scale)
-            st.success("フォントサイズを更新しました（参加者が同期ONの場合）")
-            st.rerun()
+            st.markdown("#### 表示設定（参加者に同期）")
+            current_scale = (get_room(room_code) or {}).get("font_scale", 1.15)
+            new_scale = st.slider("参加者の文字サイズ（全端末に反映）", 0.9, 1.7, float(current_scale), 0.05)
+            if st.button("適用（2秒以内に全端末へ反映）"):
+                set_room_font(room_code, new_scale)
+                st.success("フォントサイズを更新しました（参加者が同期ONの場合）")
+                st.rerun()
 
 # ---------- PROJECTOR ----------
 
-if mode == "プロジェクター":
+elif mode == "プロジェクター":
     r = get_room(room_code)
     colL, colR = st.columns([4,1])
     with colL:
