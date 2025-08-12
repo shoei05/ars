@@ -479,7 +479,7 @@ with tabs[2]:
 
 # ---------- PROJECTOR ----------
 
-elif mode == "プロジェクター":
+if mode == "プロジェクター":
     r = get_room(room_code)
     colL, colR = st.columns([4,1])
     with colL:
