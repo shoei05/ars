@@ -10,6 +10,8 @@ from contextlib import contextmanager
 import qrcode
 from streamlit_autorefresh import st_autorefresh
 import os
+CREATE_PASS = os.getenv("ARS_CREATE_PASS", "0731")
+import os
 DEFAULT_BASE_URL = os.getenv("ARS_BASE_URL", "https://arsystem.streamlit.app")
 from io import BytesIO
 
@@ -81,7 +83,8 @@ def init_db():
             created_at TEXT,
             focus_comment_id INTEGER,
             admin_pin TEXT,
-            is_closed INTEGER DEFAULT 0
+            is_closed INTEGER DEFAULT 0,
+            font_scale REAL DEFAULT 1.15
         )""")
         c.execute("""CREATE TABLE IF NOT EXISTS comments(
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -93,10 +96,23 @@ def init_db():
             hidden INTEGER DEFAULT 0,
             created_at TEXT
         )""")
-        # migrations: ensure hidden column exists
+        # migrations
+        # comments.hidden
         cols = [r["name"] for r in c.execute("PRAGMA table_info(comments)").fetchall()]
         if "hidden" not in cols:
             c.execute("ALTER TABLE comments ADD COLUMN hidden INTEGER DEFAULT 0")
+        # rooms.font_scale
+        rcols = [r["name"] for r in c.execute("PRAGMA table_info(rooms)").fetchall()]
+        if "font_scale" not in rcols:
+            c.execute("ALTER TABLE rooms ADD COLUMN font_scale REAL DEFAULT 1.15")
+        # votes table
+        c.execute("""CREATE TABLE IF NOT EXISTS votes(
+            room_code TEXT,
+            comment_id INTEGER,
+            voter TEXT,
+            created_at TEXT,
+            PRIMARY KEY (room_code, comment_id, voter)
+        )""")
 
 def is_valid_code(code:str)->bool:
     return bool(re.fullmatch(r"\d{6}", code or ""))
@@ -105,7 +121,9 @@ def ensure_room_by_code(code):
     with get_db() as conn:
         return conn.cursor().execute("SELECT * FROM rooms WHERE code=?", (code,)).fetchone()
 
-def create_room(title, admin_pin=None, code=None):
+def create_room(title, admin_pin=None, code=None, creator_pass=None):
+    if (creator_pass or "") != CREATE_PASS:
+        raise ValueError("作成パスワードが正しくありません。")
     if code and not is_valid_code(code): raise ValueError("ルームIDは6桁の数字です。")
     code = code or ''.join(random.choices('0123456789', k=6))
     with get_db() as conn:
@@ -164,10 +182,48 @@ def set_room_closed(room_code, closed:bool):
     with get_db() as conn:
         conn.cursor().execute("UPDATE rooms SET is_closed=? WHERE code=?", (1 if closed else 0, room_code))
 
+
+def has_voted(room_code, comment_id, voter):
+    with get_db() as conn:
+        c = conn.cursor()
+        row = c.execute("SELECT 1 FROM votes WHERE room_code=? AND comment_id=? AND voter=?",
+                        (room_code, comment_id, voter)).fetchone()
+        return row is not None
+
+def try_vote(room_code, comment_id, voter):
+    # returns True if vote recorded, False if duplicate
+    if not voter: return False
+    with get_db() as conn:
+        c = conn.cursor()
+        try:
+            c.execute("INSERT INTO votes(room_code, comment_id, voter, created_at) VALUES(?,?,?,?)",
+                      (room_code, comment_id, voter, datetime.utcnow().isoformat()))
+            c.execute("UPDATE comments SET votes = COALESCE(votes,0)+1 WHERE id=?", (comment_id,))
+            return True
+        except Exception:
+            return False
+
+def set_room_font(room_code, scale:float):
+    with get_db() as conn:
+        conn.cursor().execute("UPDATE rooms SET font_scale=? WHERE code=?", (float(scale), room_code))
+
 # ---------- App ----------
 st.set_page_config(page_title="ARS Canvas v3", page_icon="💬", layout="wide")
 init_db()
 st.markdown(PAGE_CSS, unsafe_allow_html=True)
+
+# --- role forcing via query params ---
+qp = st.query_params
+forced_view = qp.get("view")
+if isinstance(forced_view, (list, tuple)):
+    forced_view = forced_view[0] if forced_view else None
+force_map = {"p":"参加者", "o":"司会者", "j":"プロジェクター"}
+forced_mode = force_map.get(forced_view) if forced_view else None
+lock_flag = qp.get("lock", "0")
+if isinstance(lock_flag, (list, tuple)):
+    lock_flag = lock_flag[0] if lock_flag else "0"
+lock_forced = str(lock_flag).lower() in ("1","true","yes")
+
 
 if "user_id" not in st.session_state:
     st.session_state.user_id = str(uuid.uuid4())
@@ -176,14 +232,24 @@ if "last_refresh" not in st.session_state:
 
 # Role & global UI
 st.sidebar.header("ARS Canvas v3")
-mode = st.sidebar.radio("ロール", ["参加者", "司会者", "プロジェクター"], horizontal=True)
+
+if forced_mode and lock_forced:
+    mode = forced_mode
+    st.sidebar.write(f"ロール: **{mode}**（リンクで固定）")
+else:
+    default_idx = {"参加者":0,"司会者":1,"プロジェクター":2}.get(forced_mode, 0)
+    mode = st.sidebar.radio("ロール", ["参加者", "司会者", "プロジェクター"], index=default_idx, horizontal=True)
+
 
 hc = st.sidebar.toggle("高コントラスト（プロジェクター向け）", value=False)
-font_scale = st.sidebar.slider("文字サイズ", 0.9, 1.7, 1.15, 0.05)
+font_scale_local = st.sidebar.slider("文字サイズ（ローカル）", 0.9, 1.7, 1.15, 0.05)
+follow_org = st.sidebar.toggle("司会者の文字サイズに合わせる", value=True)
 density = st.sidebar.selectbox("表示密度", ["Comfy","Cozy","Compact"], index=1)
 pad = {"Comfy":"var(--pad-comfy)","Cozy":"var(--pad-cozy)","Compact":"var(--pad-compact)"}[density]
 cols = st.sidebar.slider("グリッド列（参加者のグリッド表示）", 1, 3, 2)
 
+effective_scale = (get_room(st.session_state.get("room_code", "")) or {}).get("font_scale", 1.15)
+font_scale = effective_scale if follow_org else font_scale_local
 st.markdown(f'<div class="{"high-contrast" if hc else ""}" style="font-size:{font_scale}rem; --pad:{pad}; --cols:{cols};">',
             unsafe_allow_html=True)
 
@@ -200,9 +266,10 @@ with st.sidebar.expander("ルーム作成（6桁）", expanded=False):
     new_title = st.text_input("タイトル", value="Session")
     desired = st.text_input("カスタムID（6桁数字）", placeholder="例: 128947")
     admin_pin = st.text_input("司会者PIN（任意）", type="password")
+    create_pass = st.text_input("作成パスワード", type="password", placeholder="0731")
     if st.button("作成", use_container_width=True):
         try:
-            code = create_room(new_title, admin_pin=admin_pin, code=desired or None)
+            code = create_room(new_title, admin_pin=admin_pin, code=desired or None, creator_pass=create_pass)
             st.session_state["room_code"] = code
             st.success(f"作成しました: {code}")
             st.query_params.update(room=code)
@@ -299,8 +366,8 @@ if mode == "参加者":
                 if r["tags"]:
                     for t in r["tags"].split(","):
                         st.markdown(f'<span class="ars-chip">#{t}</span>', unsafe_allow_html=True)
-                if st.button(f'👍 {r["votes"]}', key=f"up_{r['id']}"):
-                    vote_comment(r["id"], 1); st.experimental_rerun()
+                already = has_voted(room_code, r['id'], st.session_state.user_id)
+                st.button(f'👍 {r["votes"]}' if not already else '投票済', key=f"up_{r['id']}", disabled=already, on_click=lambda: (try_vote(room_code, r['id'], st.session_state.user_id), st.rerun()))
                 st.markdown('</div>', unsafe_allow_html=True)
             st.markdown('</div>', unsafe_allow_html=True)
         else:
@@ -312,8 +379,8 @@ if mode == "参加者":
                 if r["tags"]:
                     for t in r["tags"].split(","):
                         st.markdown(f'<span class="ars-chip">#{t}</span>', unsafe_allow_html=True)
-                if st.button(f'👍 {r["votes"]}', key=f"up_{r['id']}"):
-                    vote_comment(r["id"], 1); st.experimental_rerun()
+                already = has_voted(room_code, r['id'], st.session_state.user_id)
+                st.button(f'👍 {r["votes"]}' if not already else '投票済', key=f"up_{r['id']}", disabled=already, on_click=lambda: (try_vote(room_code, r['id'], st.session_state.user_id), st.rerun()))
                 st.markdown('</div>', unsafe_allow_html=True)
 
     with right:
@@ -326,7 +393,7 @@ if mode == "参加者":
                 add_comment(room_code, author, content)
                 st.success("送信しました")
                 st.session_state.last_refresh = datetime.utcnow().isoformat()
-                st.experimental_rerun()
+                st.rerun()
 
 # ---------- ORGANIZER ----------
 elif mode == "司会者":
@@ -354,16 +421,16 @@ elif mode == "司会者":
                 if st.button("Focus", key=f"fc_{r['id']}"):
                     set_focus(room_code, r["id"]); st.toast("フォーカスしました")
             with c3:
-                if st.button(f"👍 {r['votes']}", key=f"up_org_{r['id']}"):
-                    vote_comment(r["id"], 1); st.experimental_rerun()
+                already = has_voted(room_code, r['id'], st.session_state.user_id)
+                st.button(f"👍 {r['votes']}" if not already else '投票済', key=f"up_org_{r['id']}", disabled=already, on_click=lambda: (try_vote(room_code, r['id'], st.session_state.user_id), st.rerun()))
             with c4:
                 tag = st.text_input("タグ", key=f"tg_{r['id']}", label_visibility="collapsed", placeholder="タグ追加")
                 if st.button("＋", key=f"tg_btn_{r['id']}"):
-                    if tag.strip(): tag_comment(r["id"], tag.strip()); st.experimental_rerun()
+                    if tag.strip(): tag_comment(r["id"], tag.strip()); st.rerun()
             with c5:
                 toggle = st.toggle("非表示", value=(r["hidden"]==1), key=f"hd_{r['id']}")
                 if toggle != (r["hidden"]==1):
-                    hide_comment(r["id"], toggle); st.experimental_rerun()
+                    hide_comment(r["id"], toggle); st.rerun()
             st.markdown('</div>', unsafe_allow_html=True)
 
     with tabs[1]:
@@ -388,20 +455,30 @@ elif mode == "司会者":
         except Exception as e:
             st.warning(f"クラスタリングは現在利用できません: {e}")
 
-    with tabs[2]:
+    
+with tabs[2]:
         c1, c2, c3 = st.columns(3)
         with c1:
             closed = bool(room.get("is_closed")==1)
             new_closed = st.toggle("投稿をクローズ", value=closed)
             if new_closed != closed:
-                set_room_closed(room_code, new_closed); st.experimental_rerun()
+                set_room_closed(room_code, new_closed); st.rerun()
         with c2:
             if st.button("フォーカス解除"):
                 set_focus(room_code, None); st.success("フォーカスを解除しました")
         with c3:
             st.caption("共有は ?room=CODE のURLを配布してください")
 
+        st.markdown("#### 表示設定（参加者に同期）")
+        current_scale = (get_room(room_code) or {}).get("font_scale", 1.15)
+        new_scale = st.slider("参加者の文字サイズ（全端末に反映）", 0.9, 1.7, float(current_scale), 0.05)
+        if st.button("適用（2秒以内に全端末へ反映）"):
+            set_room_font(room_code, new_scale)
+            st.success("フォントサイズを更新しました（参加者が同期ONの場合）")
+            st.rerun()
+
 # ---------- PROJECTOR ----------
+
 elif mode == "プロジェクター":
     r = get_room(room_code)
     colL, colR = st.columns([4,1])
