@@ -270,7 +270,7 @@ with st.sidebar.expander("ルーム作成（6桁）", expanded=False):
     create_pass = st.text_input("作成パスワード", type="password", placeholder="0731")
     if st.button("作成", use_container_width=True):
         try:
-            code = create_room(new_title, admin_pin=admin_pin, code=desired or None, creator_pass=create_pass, creator_pass=create_pass)
+            code = create_room(new_title, admin_pin=admin_pin, code=desired or None, creator_pass=create_pass)
             st.session_state["room_code"] = code
             st.success(f"作成しました: {code}")
             st.query_params.update(room=code)
