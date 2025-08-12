@@ -260,8 +260,9 @@ with st.expander("参加用URLとQR"):
    ※ もしトップ画面に来た場合は、サイドバーの **「参加ID」** に **{room_code}** を入力してください。
 """)
 
-# Auto refresh
+# Auto refresh & last refresh tracking
 st_autorefresh(interval=refresh_ms, key="refresh")
+last_seen = pd.to_datetime(st.session_state.last_refresh)
  & last refresh tracking
 st_autorefresh(interval=refresh_ms, key="refresh")
 last_seen = pd.to_datetime(st.session_state.last_refresh)
