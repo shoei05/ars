@@ -263,11 +263,10 @@ if "room" in qp and "room_code" not in st.session_state:
         st.session_state["room_code"] = code_from_url
 
 with st.sidebar.expander("ルーム作成（6桁）", expanded=False):
-    new_title = st.text_input("タイトル", value="Session")
-    desired = st.text_input("カスタムID（6桁数字）", placeholder="例: 128947")
-    admin_pin = st.text_input("司会者PIN（任意）", type="password")
-    create_pass = st.text_input("作成パスワード", type="password", placeholder="0731")
-    create_pass = st.text_input("作成パスワード", type="password", placeholder="0731")
+    new_title = st.text_input("タイトル", value="Session", key="create_title")
+    desired = st.text_input("カスタムID（6桁数字）", placeholder="例: 128947", key="create_custom_code")
+    admin_pin = st.text_input("司会者PIN（任意）", type="password", key="create_admin_pin")
+    create_pass = st.text_input("作成パスワード", type="password", placeholder="0731", key="create_pass")
     if st.button("作成", use_container_width=True):
         try:
             code = create_room(new_title, admin_pin=admin_pin, code=desired or None, creator_pass=create_pass)
@@ -277,7 +276,7 @@ with st.sidebar.expander("ルーム作成（6桁）", expanded=False):
         except Exception as e:
             st.error(str(e))
 
-join_code = st.sidebar.text_input("参加ID（6桁）", value=st.session_state.get("room_code","")).strip()
+join_code = st.sidebar.text_input("参加ID（6桁）", value=st.session_state.get("room_code",""), key="join_code_input").strip()
 if st.sidebar.button("参加", use_container_width=True):
     if is_valid_code(join_code) and ensure_room_by_code(join_code):
         st.session_state["room_code"] = join_code
