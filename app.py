@@ -8,6 +8,9 @@ from dateutil import tz
 import random, uuid
 from contextlib import contextmanager
 import qrcode
+from streamlit_autorefresh import st_autorefresh
+import os
+DEFAULT_BASE_URL = os.getenv("ARS_BASE_URL", "https://arsystem.streamlit.app")
 from io import BytesIO
 
 # ---------- Theme & Styles (Focus: readability + friendly spacing) ----------
@@ -238,16 +241,28 @@ with st.container():
 
 # QR absolute link builder
 with st.expander("参加用URLとQR"):
-    base_hint = st.text_input("ベースURL（任意）", placeholder="https://your-app.streamlit.app")
-    if base_hint:
-        join_link = f"{base_hint}?room={room_code}"
-    else:
-        join_link = f"?room={room_code}"
-    st.code(join_link, language="text")
-    buf = BytesIO(); qrcode.make(join_link).save(buf, format="PNG"); buf.seek(0)
-    st.image(buf, caption="スマホで読み取り", width=180)
+    # 固定のベースURLを使用（?room=CODE を付与）
+    join_link = f"{DEFAULT_BASE_URL}/?room={room_code}"
+    st.text_input("参加URL（配布用）", value=join_link, disabled=True)
+    st.caption("このURLをスマホで開けば、そのままルームに参加できます。")
 
-# Auto refresh & last refresh tracking
+    # QRコード
+    buf = BytesIO()
+    qrcode.make(join_link).save(buf, format="PNG"); buf.seek(0)
+    st.image(buf, caption="スマホで読み取り（URLを開くだけで参加）", width=180)
+
+    # 参加案内（スクリーンに表示する想定）
+    st.markdown("""
+**参加のしかた**
+1. スマホで **上記URL** を開く（またはQRを読み取り）  
+2. 画面上部のロールを **「参加者」** にする  
+3. そのまま投稿・👍投票ができます  
+   ※ もしトップ画面に来た場合は、サイドバーの **「参加ID」** に **{room_code}** を入力してください。
+""")
+
+# Auto refresh
+st_autorefresh(interval=refresh_ms, key="refresh")
+ & last refresh tracking
 st_autorefresh(interval=refresh_ms, key="refresh")
 last_seen = pd.to_datetime(st.session_state.last_refresh)
 
