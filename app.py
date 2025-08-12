@@ -185,9 +185,11 @@ st.markdown(f'<div class="{"high-contrast" if hc else ""}" style="font-size:{fon
             unsafe_allow_html=True)
 
 # Room selection (6-digit)
-qp = st.experimental_get_query_params()
+qp = st.query_params
 if "room" in qp and "room_code" not in st.session_state:
-    code_from_url = qp.get("room", [""])[0]
+    code_from_url = qp.get("room")
+    if isinstance(code_from_url, (list, tuple)):
+        code_from_url = code_from_url[0] if code_from_url else ""
     if is_valid_code(code_from_url) and ensure_room_by_code(code_from_url):
         st.session_state["room_code"] = code_from_url
 
@@ -200,7 +202,7 @@ with st.sidebar.expander("ルーム作成（6桁）", expanded=False):
             code = create_room(new_title, admin_pin=admin_pin, code=desired or None)
             st.session_state["room_code"] = code
             st.success(f"作成しました: {code}")
-            st.experimental_set_query_params(room=code)
+            st.query_params.update(room=code)
         except Exception as e:
             st.error(str(e))
 
@@ -208,7 +210,7 @@ join_code = st.sidebar.text_input("参加ID（6桁）", value=st.session_state.g
 if st.sidebar.button("参加", use_container_width=True):
     if is_valid_code(join_code) and ensure_room_by_code(join_code):
         st.session_state["room_code"] = join_code
-        st.experimental_set_query_params(room=join_code)
+        st.query_params.update(room=join_code)
     else:
         st.sidebar.error("ルームが見つかりません。")
 
@@ -246,7 +248,7 @@ with st.expander("参加用URLとQR"):
     st.image(buf, caption="スマホで読み取り", width=180)
 
 # Auto refresh & last refresh tracking
-st.autorefresh(interval=refresh_ms, key="refresh")
+st_autorefresh(interval=refresh_ms, key="refresh")
 last_seen = pd.to_datetime(st.session_state.last_refresh)
 
 # Admin PIN helper

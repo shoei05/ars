@@ -1,4 +1,6 @@
-# ARS Canvas v3 — Streamlined for Usability & Visibility
+# ARS Canvas v3
+
+[日本語READMEはこちら](README_ja.md) — Streamlined for Usability & Visibility
 
 A refined Streamlit-based audience response system with **6-digit numeric rooms**, **projector-first design**,
 and **super-simple controls**. Built for bright rooms, big screens, and large crowds.
@@ -22,3 +24,6 @@ streamlit run app.py
 
 ## Deploy
 Push this folder to GitHub, then deploy on Streamlit Community Cloud.
+
+
+> メモ: `data/` は自動作成されます。GitHubに空ディレクトリを保持したい場合は `data/.gitkeep` を置いてください。
