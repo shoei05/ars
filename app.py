@@ -51,7 +51,11 @@ button[kind="secondary"], button[kind="primary"]{ padding:.6rem .9rem; border-ra
 """
 
 # ---------- DB Helpers ----------
-DB_PATH = "data/ars.sqlite"
+import os
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+DB_DIR = os.path.join(BASE_DIR, "data")
+os.makedirs(DB_DIR, exist_ok=True)
+DB_PATH = os.path.join(DB_DIR, "ars.sqlite")
 
 def _dict_factory(cursor, row):
     return { col[0]: row[idx] for idx, col in enumerate(cursor.description) }
