@@ -121,7 +121,7 @@ def ensure_room_by_code(code):
     with get_db() as conn:
         return conn.cursor().execute("SELECT * FROM rooms WHERE code=?", (code,)).fetchone()
 
-def create_room(title, admin_pin=None, code=None, creator_pass=None, creator_pass=None):
+def create_room(title, admin_pin=None, code=None, creator_pass=None):
     if (creator_pass or "") != CREATE_PASS:
         raise ValueError("作成パスワードが正しくありません。")
     if code and not is_valid_code(code): raise ValueError("ルームIDは6桁の数字です。")
